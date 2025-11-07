@@ -1,2 +1,2 @@
 # Unsupervised-Learning---Seed-dataset
-In questo progetto verranno illustrate varie  tecniche princicapli di Unsupervised Learning quali: Statistica univariata, Statistica multivariata, mixture models, PCA, Cluster Analysis tramite l'utilizzo di R Studio/R Markdown. Buona visione!
+This project will illustrate various key techniques of unsupervised learning, such as: univariate statistics, multivariate statistics, mixture models, PCA, and cluster analysis, cluster validation using R Studio/R Markdown. Enjoy!
