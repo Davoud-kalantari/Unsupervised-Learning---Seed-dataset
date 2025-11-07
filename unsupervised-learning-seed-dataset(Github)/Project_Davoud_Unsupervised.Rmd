@@ -1,0 +1,1856 @@
+---
+title: "Project_Data_Analysis"
+author: "Davoud Kalantari"
+date: "2025-08-01"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+```{r setup, echo = FALSE, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+ #pacchetti che useremo in seguito, come nel report
+packs <- c(
+  "tidyverse","gamlss","gamlss.dist","gamlss.mx",
+  "factoextra","NbClust","clValid","fpc","cluster",
+  "mclust","clustertend","GGally"
+)
+to_install <- setdiff(packs, rownames(installed.packages()))
+if(length(to_install)) install.packages(to_install)
+invisible(lapply(packs, library, character.only = TRUE))
+```
+
+```{r, echo = TRUE, warning = FALSE}
+# carico il dataset processato
+
+seed <- read.table("C:/Users/David/Desktop/DATA SCIENCE MAGISTRALE/Data Analysis/Davoud.K_Project/seeds/seeds_dataset.txt", header = FALSE)
+
+colnames(seed) <- c("A","P","C","LK","WK","A_Coef","LKG","target")
+
+```
+
+```{r, echo = FALSE}
+seed$target <- seed$target - 1L
+
+```
+
+## DATASET EXPLANATION : seed
+
+This report is about the “Seed” dataset contained in  
+[https://archive.ics.uci.edu/dataset/236/seeds](https://archive.ics.uci.edu/dataset/236/seeds).
+
+It contains measurements of geometrical properties of kernels belonging to three different varieties of wheat (Kama, Rosa and Canadian).  
+High quality visualization of the internal kernel structure was detected using a soft X-ray technique.  
+The kernels were randomly selected for the experiment conducted at the Institute of Agrophysics of the Polish Academy of Sciences in Lublin.
+
+To construct the data, seven geometric parameters (variables) of wheat kernels were measured:  
+
+1. **Area A (mm²)**  
+2. **Perimeter P (mm)**  
+3. **Compactness C**: the geometric compactness of the shape of the kernel  
+   \( C = \frac{4 \pi A}{P^2} \)  
+4. **Length of kernel LK (mm)**  
+5. **Width of kernel WK (mm)**  
+6. **Asymmetry coefficient A_Coef**: the asymmetry of the shape of the kernel  
+7. **Length of kernel groove LKG (mm)**  
+
+All of these parameters are real-valued continuous variables.  
+
+In addition we have the external categorical variable:  
+8. **Class target**,  
+that describes the three different varieties of wheat (Kama, Rosa, and Canadian).  
+
+The number of observations for each class is balanced.  
+Briefly, there are 210 observations with 7 continuous input variables and 1 categorical output variable.
+
+```{r}
+str(seed)
+summary(seed$A)
+
+```
+ verify that no rows have missing values (NA).
+
+```{r}
+
+# Import dataset after saving it in the working directory
+# (already loaded above)
+
+# Verifica se ci sono righe con valori mancanti nel dataset
+righe_complete <- complete.cases(seed)
+
+# Conta il numero di righe con valori mancanti
+numero_righe_mancanti <- sum(!righe_complete)
+
+# Stampa il numero di righe con valori mancanti
+print(numero_righe_mancanti)
+```
+## UNIVARIATE ANALYSIS  
+
+### 1. Area  
+
+```{r}
+#univariate analysis
+summary(seed$A)
+sd(seed$A)
+#coeffiient of variation
+sd(seed$A)/mean(seed$A)
+
+```
+
+The variable **Area (A)** ranges from **10.59 mm²** to **21.18 mm²**.  
+The mean value is approximately **14.85 mm²**, with a standard deviation of **2.99 mm²**,  
+resulting in a coefficient of variation close to **0.19**, which indicates a moderate level of variability within the data.
+
+
+Now we analuze the **mode** that assume 3 different threemodal distributiion 
+```{r}
+# Frequency table and mode computation
+frequencyArea <- table(seed$A)
+names(frequencyArea)[frequencyArea == max(frequencyArea)]
+```
+
+The frequency distribution of the area variable shows **three distinct modal values**: **11.23**, **14.11**, and **15.38**.  
+This suggests that the distribution is **trimodal**, meaning it presents three peaks in its density function.
+
+
+
+```{r}
+# Boxplot for Area
+
+boxplot(seed$A, main= "Boxplot of Area")
+```
+
+The boxplot of the Area variable does not display any **significant outliers**.  
+All the data points fall within a regular interval, suggesting that the distribution is reasonably uniform.  
+The median is located near the center of the box, indicating a fairly **symmetric distribution**.
+
+
+
+
+```{r}
+# Histogram with kernel density estimation
+hist(seed$A,freq=FALSE)
+#kernel smoothing
+lines(density(seed$A), col="red")
+```
+
+The histogram, combined with the overlaid kernel density curve, provides a clear visualization of how the values of **Area** are distributed.  
+The distribution appears slightly asymmetric but without extreme deviations.  
+This visualization will be useful in the following sections to identify which **probabilistic model** best fits the data.
+
+### Mixture of 2 Gamma Distributions (K = 2)
+
+The first model to be tested is a **Gamma mixture**, since the support of the variable *Area (A)*  
+lies on the positive real line. We begin by fitting a model with **K = 2 components**.
+
+```{r, echo = FALSE, message = FALSE}
+set.seed(1)
+fit.GA.2 <- gamlssMXfits(n = 5, seed$A ~ 1, family = GA, K = 2, data = NULL)
+
+```
+
+We now extract the parameter estimates for each gamma component and overlay the two weighted densities on the empirical distribution of Area. The dashed curves correspond to the single components, while the solid curve is the overall mixture.
+```{r}
+# estimate of mu and sigma in group 1
+mu.hat1 <- exp(fit.GA.2[["models"]][[1]][["mu.coefficients"]])   # estimate of mu parameter
+sigma.hat1 <- exp(fit.GA.2[["models"]][[1]][["sigma.coefficients"]])
+
+# estimate of mu and sigma in group 2
+mu.hat2 <- exp(fit.GA.2[["models"]][[2]][["mu.coefficients"]])
+sigma.hat2 <- exp(fit.GA.2[["models"]][[2]][["sigma.coefficients"]])
+
+# histogram + component and mixture densities
+hist(seed$A, freq = FALSE, breaks = 50, main = "Mixture of 2 Gamma distributions", xlab = "seed$A")
+
+# weighted density for cluster one
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.GA.2[["prob"]][1] * dGA(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                  mu = mu.hat1, sigma = sigma.hat1),
+      lty = 2, lwd = 3, col = 2)
+
+# weighted density for cluster two
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.GA.2[["prob"]][2] * dGA(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                  mu = mu.hat2, sigma = sigma.hat2),
+      lty = 2, lwd = 3, col = 3)
+
+# total mixture
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.GA.2[["prob"]][1] * dGA(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                  mu = mu.hat1, sigma = sigma.hat1) +
+      fit.GA.2[["prob"]][2] * dGA(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                  mu = mu.hat2, sigma = sigma.hat2),
+      lty = 1, lwd = 3, col = 1)
+
+# model summary and log-likelihood (as in the report)
+print(fit.GA.2)
+logLik(fit.GA.2)   # df = 5 (1 weight + 2 parameters per gamma)
+
+```
+
+Next, we increase model flexibility by fitting a Gamma mixture with K = 3 components and inspect EM convergence.
+
+```{r, echo = FALSE, message = FALSE, include=FALSE}
+set.seed(1)
+fit.GA.3 <- gamlssMXfits(n = 5, seed$A ~ 1, family = GA, K = 3, data = NULL)
+model = 1
+model = 2
+model = 3
+model = 4
+model = 5
+
+```
+After convergence, we retrieve the three component parameters and superimpose the weighted densities as before, together with the overall mixture.
+
+```{r}
+# estimates for groups 1–3
+mu.hat1 <- exp(fit.GA.3[["models"]][[1]][["mu.coefficients"]])
+sigma.hat1 <- exp(fit.GA.3[["models"]][[1]][["sigma.coefficients"]])
+
+mu.hat2 <- exp(fit.GA.3[["models"]][[2]][["mu.coefficients"]])
+sigma.hat2 <- exp(fit.GA.3[["models"]][[2]][["sigma.coefficients"]])
+
+mu.hat3 <- exp(fit.GA.3[["models"]][[3]][["mu.coefficients"]])
+sigma.hat3 <- exp(fit.GA.3[["models"]][[3]][["sigma.coefficients"]])
+
+# plot with components and mixture
+hist(seed$A, freq = FALSE, breaks = 50, main = "Mixture of 3 Gamma distributions", xlab = "seed$A")
+
+# component 1
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.GA.3[["prob"]][1] * dGA(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                  mu = mu.hat1, sigma = sigma.hat1),
+      lty = 2, lwd = 3, col = 2)
+
+# component 2
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.GA.3[["prob"]][2] * dGA(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                  mu = mu.hat2, sigma = sigma.hat2),
+      lty = 2, lwd = 3, col = 3)
+
+# component 3
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.GA.3[["prob"]][3] * dGA(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                  mu = mu.hat3, sigma = sigma.hat3),
+      lty = 2, lwd = 3, col = 4)
+
+# overall mixture
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.GA.3[["prob"]][1] * dGA(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                  mu = mu.hat1, sigma = sigma.hat1) +
+      fit.GA.3[["prob"]][2] * dGA(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                  mu = mu.hat2, sigma = sigma.hat2) +
+      fit.GA.3[["prob"]][3] * dGA(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                  mu = mu.hat3, sigma = sigma.hat3),
+      lty = 1, lwd = 3, col = 1)
+
+# print model summary and logLik
+print(fit.GA.3)
+logLik(fit.GA.3)   # df = 8
+
+```
+
+
+Now we fit the **Gamma mixture model with four components (K = 4)**.  
+The same procedure as before is applied, so only the essential commands are reported here for clarity.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE,include=FALSE}
+set.seed(1)
+fit.GA.4 <- gamlssMXfits(n = 5, seed$A ~ 1, family = GA, K = 4, data = NULL)
+print(fit.GA.4)
+logLik(fit.GA.4)
+```
+
+```{r}
+# estimate of mu and sigma in group 1
+mu.hat1 <- exp(fit.GA.4[["models"]][[1]][["mu.coefficients"]])   #estimate of mu parameter 
+sigma.hat1 <- exp(fit.GA.4[["models"]][[1]][["sigma.coefficients"]])
+
+# estimate of mu and sigma in group 2
+mu.hat2 <- exp(fit.GA.4[["models"]][[2]][["mu.coefficients"]])    
+sigma.hat2 <- exp(fit.GA.4[["models"]][[2]][["sigma.coefficients"]])
+
+# estimate of mu and sigma in group 3
+mu.hat3 <- exp(fit.GA.4[["models"]][[3]][["mu.coefficients"]])    
+sigma.hat3 <- exp(fit.GA.4[["models"]][[3]][["sigma.coefficients"]])
+
+# estimate of mu and sigma in group 3
+mu.hat4 <- exp(fit.GA.4[["models"]][[4]][["mu.coefficients"]])    
+sigma.hat4 <- exp(fit.GA.4[["models"]][[4]][["sigma.coefficients"]])
+
+hist(seed$A,freq = FALSE,breaks=50,main="Mixture of 4 Gamma distributions")
+lines(seq(min(seed$A),max(seed$A),length=length(seed$A)),fit.GA.4[["prob"]][1]*dGA(seq(min(seed$A),max(seed$A),length=length(seed$A)), mu = mu.hat1, sigma = sigma.hat1),lty=2,lwd=3,col=2) #weighted density for cluster one 
+lines(seq(min(seed$A),max(seed$A),length=length(seed$A)),fit.GA.4[["prob"]][2]*dGA(seq(min(seed$A),max(seed$A),length=length(seed$A)), mu = mu.hat2, sigma = sigma.hat2),lty=2,lwd=3,col=3) #weighted density for cluster two 
+lines(seq(min(seed$A),max(seed$A),length=length(seed$A)),fit.GA.4[["prob"]][3]*dGA(seq(min(seed$A),max(seed$A),length=length(seed$A)), mu = mu.hat3, sigma = sigma.hat3),lty=2,lwd=3,col=4) #weighted density for cluster three
+lines(seq(min(seed$A),max(seed$A),length=length(seed$A)),fit.GA.4[["prob"]][4]*dGA(seq(min(seed$A),max(seed$A),length=length(seed$A)), mu = mu.hat4, sigma = sigma.hat4),lty=2,lwd=3,col=5) #weighted density for cluster four
+
+
+lines(seq(min(seed$A),max(seed$A),length=length(seed$A)),
+      fit.GA.4[["prob"]][1]*dGA(seq(min(seed$A),max(seed$A),length=length(seed$A)), mu = mu.hat1, sigma = sigma.hat1) +
+        fit.GA.4[["prob"]][2]*dGA(seq(min(seed$A),max(seed$A),length=length(seed$A)), mu = mu.hat2, sigma = sigma.hat2)+
+        fit.GA.4[["prob"]][3]*dGA(seq(min(seed$A),max(seed$A),length=length(seed$A)), mu = mu.hat3, sigma = sigma.hat3)+
+          fit.GA.4[["prob"]][4]*dGA(seq(min(seed$A),max(seed$A),length=length(seed$A)), mu = mu.hat4, sigma = sigma.hat4),
+      lty = 1, lwd = 3, col = 1)
+print(fit.GA.4)
+
+logLik(fit.GA.4) #
+```
+
+The plot shows the **fitted mixture of four Gamma components**.  
+Dashed curves correspond to each single component, and the solid black line represents the total mixture density.
+
+## Model Comparison and Selection
+
+We now compare the Gamma mixture models with **K = 2, 3, and 4** components using  
+the Akaike Information Criterion (**AIC**), the Schwarz Bayesian Criterion (**SBC** or **BIC**),  
+and the Log-Likelihood (**LLH**).  
+
+Models with smaller AIC and BIC values are preferred, as they achieve a better trade-off between goodness of fit and model complexity.
+
+```{r}
+# Comparison table of information criteria for Gamma mixtures
+data.frame(
+  row.names = c("Gamma mixture with k=2", "Gamma mixture with k=3", "Gamma mixture with k=4"),
+  AIC  = c(fit.GA.2$aic, fit.GA.3$aic, fit.GA.4$aic),
+  SBC  = c(fit.GA.2$sbc, fit.GA.3$sbc, fit.GA.4$sbc),
+  LLH  = c(as.numeric(logLik(fit.GA.2)), as.numeric(logLik(fit.GA.3)), as.numeric(logLik(fit.GA.4)))
+)
+```
+
+Based on the comparison, the **Gamma mixture with K = 3** gives the most suitable fit to the data.  
+Although the four-component model achieves a slightly higher log-likelihood, its additional complexity  
+does not provide a meaningful improvement and is therefore not justified.
+
+
+### Weibull Mixture Model (K = 2)
+
+It is possible to fit a **Weibull mixture** model to the same variable,  
+since the *Area (A)* values are positive and continuous.  
+Here we start with **two components (K = 2)**.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE,include=FALSE}
+set.seed(1)
+fit.WE.2 <- gamlssMXfits(n = 5, seed$A ~ 1, family = WEI, K = 2, data = NULL)
+model = 1
+model = 2
+model = 3
+model = 4
+model = 5
+```
+
+
+
+```{r}
+# Estimate of mu and sigma for each group
+mu.hat1 <- exp(fit.WE.2[["models"]][[1]][["mu.coefficients"]])
+sigma.hat1 <- exp(fit.WE.2[["models"]][[1]][["sigma.coefficients"]])
+mu.hat2 <- exp(fit.WE.2[["models"]][[2]][["mu.coefficients"]])
+sigma.hat2 <- exp(fit.WE.2[["models"]][[2]][["sigma.coefficients"]])
+
+# Histogram with Weibull mixture
+hist(seed$A, freq = FALSE, breaks = 50, main = "Mixture of 2 Weibull distributions", xlab = "seed$A")
+
+# Weighted density for cluster 1
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.WE.2[["prob"]][1] * dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                   mu = mu.hat1, sigma = sigma.hat1),
+      lty = 2, lwd = 3, col = 2)
+
+# Weighted density for cluster 2
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.WE.2[["prob"]][2] * dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                   mu = mu.hat2, sigma = sigma.hat2),
+      lty = 2, lwd = 3, col = 3)
+
+# Overall mixture
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.WE.2[["prob"]][1]*dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                 mu = mu.hat1, sigma = sigma.hat1) +
+      fit.WE.2[["prob"]][2]*dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                 mu = mu.hat2, sigma = sigma.hat2),
+      lty = 1, lwd = 3, col = 1)
+
+# Print model summary
+print(fit.WE.2)
+logLik(fit.WE.2)
+```
+
+The two-component Weibull mixture provides a good fit to the distribution of *Area (A)*.  
+Each dashed curve represents one component, while the solid black curve is the overall mixture density.
+
+
+### Weibull Mixture Model (K = 3)
+
+Now we increase the number of components to **K = 3** in order to test  
+whether a higher model complexity leads to a better fit.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, include=FALSE}
+set.seed(1)
+fit.WE.3 <- gamlssMXfits(n = 5, seed$A ~ 1, family = WEI, K = 3, data = NULL)
+print(fit.WE.3)
+logLik(fit.WE.3)
+```
+
+
+
+```{r}
+# Extract parameters for each of the three groups
+mu.hat1 <- exp(fit.WE.3[["models"]][[1]][["mu.coefficients"]])
+sigma.hat1 <- exp(fit.WE.3[["models"]][[1]][["sigma.coefficients"]])
+mu.hat2 <- exp(fit.WE.3[["models"]][[2]][["mu.coefficients"]])
+sigma.hat2 <- exp(fit.WE.3[["models"]][[2]][["sigma.coefficients"]])
+mu.hat3 <- exp(fit.WE.3[["models"]][[3]][["mu.coefficients"]])
+sigma.hat3 <- exp(fit.WE.3[["models"]][[3]][["sigma.coefficients"]])
+
+# Histogram with 3-component Weibull mixture
+hist(seed$A, freq = FALSE, breaks = 50, main = "Mixture of 3 Weibull distributions", xlab = "seed$A")
+
+# Weighted densities for each component
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.WE.3[["prob"]][1] * dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                   mu = mu.hat1, sigma = sigma.hat1),
+      lty = 2, lwd = 3, col = 2)
+
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.WE.3[["prob"]][2] * dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                   mu = mu.hat2, sigma = sigma.hat2),
+      lty = 2, lwd = 3, col = 3)
+
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.WE.3[["prob"]][3] * dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                   mu = mu.hat3, sigma = sigma.hat3),
+      lty = 2, lwd = 3, col = 4)
+
+# Overall mixture
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.WE.3[["prob"]][1]*dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                 mu = mu.hat1, sigma = sigma.hat1) +
+      fit.WE.3[["prob"]][2]*dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                 mu = mu.hat2, sigma = sigma.hat2) +
+      fit.WE.3[["prob"]][3]*dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                 mu = mu.hat3, sigma = sigma.hat3),
+      lty = 1, lwd = 3, col = 1)
+
+print(fit.WE.3)
+logLik(fit.WE.3)
+
+
+```
+
+The results indicate that increasing the number of components to three  
+slightly improves the model fit, but at the cost of additional complexity.  
+This will later be assessed by comparing **AIC**, **SBC**, and **log-likelihood** across models.
+
+
+Now we test a **Weibull mixture with four components (K = 4)**.  
+The estimation process follows the same procedure used for the previous models.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, include=FALSE}
+set.seed(1)
+fit.WE.4 <- gamlssMXfits(n = 5, seed$A ~ 1, family = WEI, K = 4, data = NULL)
+print(fit.WE.4)
+logLik(fit.WE.4)
+```
+
+
+
+```{r}
+# Extract parameters for each of the four groups
+mu.hat1 <- exp(fit.WE.4[["models"]][[1]][["mu.coefficients"]])
+sigma.hat1 <- exp(fit.WE.4[["models"]][[1]][["sigma.coefficients"]])
+mu.hat2 <- exp(fit.WE.4[["models"]][[2]][["mu.coefficients"]])
+sigma.hat2 <- exp(fit.WE.4[["models"]][[2]][["sigma.coefficients"]])
+mu.hat3 <- exp(fit.WE.4[["models"]][[3]][["mu.coefficients"]])
+sigma.hat3 <- exp(fit.WE.4[["models"]][[3]][["sigma.coefficients"]])
+mu.hat4 <- exp(fit.WE.4[["models"]][[4]][["mu.coefficients"]])
+sigma.hat4 <- exp(fit.WE.4[["models"]][[4]][["sigma.coefficients"]])
+
+# Histogram with 4-component Weibull mixture
+hist(seed$A, freq = FALSE, breaks = 50, main = "Mixture of 4 Weibull distributions", xlab = "seed$A")
+
+# Weighted densities for each component
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.WE.4[["prob"]][1] * dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                   mu = mu.hat1, sigma = sigma.hat1),
+      lty = 2, lwd = 3, col = 2)
+
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.WE.4[["prob"]][2] * dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                   mu = mu.hat2, sigma = sigma.hat2),
+      lty = 2, lwd = 3, col = 3)
+
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.WE.4[["prob"]][3] * dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                   mu = mu.hat3, sigma = sigma.hat3),
+      lty = 2, lwd = 3, col = 4)
+
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.WE.4[["prob"]][4] * dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                   mu = mu.hat4, sigma = sigma.hat4),
+      lty = 2, lwd = 3, col = 5)
+
+# Overall mixture
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.WE.4[["prob"]][1]*dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                 mu = mu.hat1, sigma = sigma.hat1) +
+      fit.WE.4[["prob"]][2]*dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                 mu = mu.hat2, sigma = sigma.hat2) +
+      fit.WE.4[["prob"]][3]*dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                 mu = mu.hat3, sigma = sigma.hat3) +
+      fit.WE.4[["prob"]][4]*dWEI(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+                                 mu = mu.hat4, sigma = sigma.hat4),
+      lty = 1, lwd = 3, col = 1)
+
+
+print(fit.WE.4)
+logLik(fit.WE.4)
+```
+
+The chart above shows the **mixture of four Weibull distributions**.  
+Each dashed line represents an individual component, while the solid black line corresponds to the full fitted model.
+
+### Comparison of Weibull Mixture Models
+
+To determine which Weibull mixture provides the best fit,  
+we compare the models using **AIC**, **SBC (or BIC)**, and **Log-Likelihood (LLH)** criteria.
+
+```{r}
+data.frame(
+  row.names = c("Weibull mixture with k=2",
+                "Weibull mixture with k=3",
+                "Weibull mixture with k=4"),
+  AIC  = c(fit.WE.2$aic, fit.WE.3$aic, fit.WE.4$aic),
+  SBC  = c(fit.WE.2$sbc, fit.WE.3$sbc, fit.WE.4$sbc),
+  LLH  = c(as.numeric(logLik(fit.WE.2)),
+           as.numeric(logLik(fit.WE.3)),
+           as.numeric(logLik(fit.WE.4)))
+)
+```
+
+Based on the comparison table, the **Weibull mixture with K = 4 components**  
+appears to provide the best overall fit according to two of the three model selection criteria.  
+This configuration captures the main distributional patterns of the data more effectively  
+while maintaining a reasonable model complexity.
+
+### Inverse Gamma Mixture Model (K = 3)
+
+It is possible to fit a mixture of **Inverse Gamma** distributions.  
+We start with **K = 3** components to model the positive and asymmetric nature of the *Area (A)* variable.
+
+```{r,echo = FALSE, message = FALSE, warning = FALSE,include=FALSE}
+set.seed(1)
+fit.IG.3 <- gamlssMXfits(n = 5, seed$A ~ 1, family = IG, K = 3, data = NULL)
+print(fit.IG.3)
+logLik(fit.IG.3)
+```
+
+
+
+```{r}
+# estimate of mu and sigma in group 2
+mu.hat2 <- exp(fit.IG.3[["models"]][[2]][["mu.coefficients"]])    
+sigma.hat2 <- exp(fit.IG.3[["models"]][[2]][["sigma.coefficients"]])
+
+mu.hat3 <- exp(fit.IG.3[["models"]][[3]][["mu.coefficients"]]) 
+sigma.hat3 <- exp(fit.IG.3[["models"]][[3]][["sigma.coefficients"]])
+
+hist(seed$A, freq = FALSE, breaks = 50, main = "Mixture of 3 Inverse Gamma distributions")
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.IG.3[["prob"]][1] * dRG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                  mu = mu.hat1, sigma = sigma.hat1),
+      lty = 2, lwd = 3, col = 2) # weighted density for cluster one 
+
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.IG.3[["prob"]][2] * dRG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                  mu = mu.hat2, sigma = sigma.hat2),
+      lty = 2, lwd = 3, col = 3) # weighted density for cluster two 
+
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.IG.3[["prob"]][3] * dRG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                  mu = mu.hat3, sigma = sigma.hat3),
+      lty = 2, lwd = 3, col = 4) # weighted density for cluster two 
+
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.IG.3[["prob"]][1]*dIG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                mu = mu.hat1, sigma = sigma.hat1) +
+        fit.IG.3[["prob"]][2]*dIG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                  mu = mu.hat2, sigma = sigma.hat2) +
+        fit.IG.3[["prob"]][3]*dIG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                  mu = mu.hat3, sigma = sigma.hat3),
+      lty = 1, lwd = 3, col = 1)
+
+print(fit.IG.3)
+
+logLik(fit.IG.3)
+
+```
+
+The figure above displays the fitted **3-component Inverse Gamma mixture**.  
+Dashed colored lines correspond to individual components, while the solid black line  
+represents the overall fitted mixture density.
+
+
+
+We now attempt to increase the number of mixture components to **K = 4**,  
+to assess whether this provides a significantly better fit.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE,include=FALSE}
+set.seed(1)
+fit.IG.4 <- gamlssMXfits(n = 5, seed$A ~ 1, family = IG, K = 4, data = NULL)
+print(fit.IG.4)
+logLik(fit.IG.4)
+```
+
+
+
+```{r}
+# estimate of mu and sigma in group 1
+mu.hat1 <- exp(fit.IG.4[["models"]][[1]][["mu.coefficients"]]) 
+sigma.hat1 <- exp(fit.IG.4[["models"]][[1]][["sigma.coefficients"]])
+
+# estimate of mu and sigma in group 2
+mu.hat2 <- exp(fit.IG.4[["models"]][[2]][["mu.coefficients"]])    
+sigma.hat2 <- exp(fit.IG.4[["models"]][[2]][["sigma.coefficients"]])
+
+# estimate of mu and sigma in group 3
+mu.hat3 <- exp(fit.IG.4[["models"]][[3]][["mu.coefficients"]]) 
+sigma.hat3 <- exp(fit.IG.4[["models"]][[3]][["sigma.coefficients"]])
+
+# estimate of mu and sigma in group 4
+mu.hat4 <- exp(fit.IG.4[["models"]][[4]][["mu.coefficients"]]) 
+sigma.hat4 <- exp(fit.IG.4[["models"]][[4]][["sigma.coefficients"]])
+
+hist(seed$A, freq = FALSE, breaks = 50, main = "Mixture of 4 Inverse Gamma distributions")
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.IG.4[["prob"]][1] * dRG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                  mu = mu.hat1, sigma = sigma.hat1),
+      lty = 2, lwd = 3, col = 2) # weighted density for cluster one 
+
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.IG.4[["prob"]][2] * dRG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                  mu = mu.hat2, sigma = sigma.hat2),
+      lty = 2, lwd = 3, col = 3) # weighted density for cluster two 
+
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.IG.4[["prob"]][3] * dRG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                  mu = mu.hat3, sigma = sigma.hat3),
+      lty = 2, lwd = 3, col = 4) # weighted density for cluster three 
+
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.IG.4[["prob"]][4] * dRG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                  mu = mu.hat4, sigma = sigma.hat4),
+      lty = 2, lwd = 3, col = 5) # weighted density for cluster four 
+
+lines(seq(min(seed$A), max(seed$A), length = length(seed$A)),
+      fit.IG.4[["prob"]][1]*dIG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                mu = mu.hat1, sigma = sigma.hat1) +
+        fit.IG.4[["prob"]][2]*dIG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                  mu = mu.hat2, sigma = sigma.hat2) +
+        fit.IG.4[["prob"]][3]*dIG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                  mu = mu.hat3, sigma = sigma.hat3) +
+        fit.IG.4[["prob"]][4]*dIG(seq(min(seed$A), max(seed$A), length = length(seed$A)), 
+                                  mu = mu.hat4, sigma = sigma.hat4),
+      lty = 1, lwd = 3, col = 1)
+
+print(fit.IG.4)
+
+logLik(fit.IG.4)
+
+
+
+```
+
+Adding a fourth component does not substantially improve the model’s goodness of fit.  
+Hence, **K = 3** is considered the most appropriate configuration for the Inverse Gamma mixture in this case.
+
+
+
+### Univariate Analysis for K = 1
+
+Now we perform the **univariate analysis** by fitting several single-component models (*K = 1*)  
+using different continuous distributions.  
+This allows us to identify which distribution best describes the *Area (A)* variable among  
+the family of real positive continuous models.
+
+```{r, echo = FALSE, warning = FALSE,include=FALSE}
+# Fitting different distributions with K = 1
+fit.EXP  <- gamlss(seed$A ~ 1, family = EXP)      # Exponential
+fit.GA   <- gamlss(seed$A ~ 1, family = GA)       # Gamma
+fit.IG   <- gamlss(seed$A ~ 1, family = IG)       # Inverse Gaussian
+fit.LOGNO <- gamlss(seed$A ~ 1, family = LOGNO)   # Log-Normal
+fit.WEI  <- gamlss(seed$A ~ 1, family = WEI)      # Weibull
+fit.LO   <- gamlss(seed$A ~ 1, family = LO)       # Logistic
+fit.ST5  <- gamlss(seed$A ~ 1, family = ST5)      # Skew-t type 5
+fit.NET  <- gamlss(seed$A ~ 1, family = NET)      # Normal exponential type
+```
+
+
+
+### Fitted Distributions Visualization
+
+Below we show the fitted density curve (in red) over the histogram of the data for each distribution.
+
+```{r}
+
+set.seed(1)
+par(mfrow=c(2,4)) # Questo comando imposta il layout per 2 righe e 4 colonne, permettendo di visualizzare 8 grafici contemporaneamente.
+
+fit.EXP <- histDist(seed$A, family=EXP, nbins = 30, main="Exponential distribution") #best exponential model with respect to the histogram to fit the data
+fit.EXP$df.fit # number of parameters
+fitted(fit.EXP, "mu")[1] # ML estimated parameter
+logLik(fit.EXP)
+AIC(fit.EXP) # AIC (to be minimized)
+fit.EXP$sbc  # BIC (to be minimized)
+
+fit.GA <- histDist(seed$A, family=GA, nbins = 30, main="Gamma distribution")
+fit.GA$df.fit # number of parameters
+fitted(fit.GA, "mu")[1] # ML estimated first parameter
+fitted(fit.GA, "sigma")[1] # ML estimated second parameter
+logLik(fit.GA)
+AIC(fit.GA) # AIC (to be minimized)
+fit.GA$sbc  # BIC (to be minimized)
+
+fit.IG <- histDist(seed$A, family=IG, nbins = 30, main="Inverse Gaussian distribution") #this is not good
+fit.IG$df.fit
+fitted(fit.IG, "mu")[1] # ML estimated first parameter
+fitted(fit.IG, "sigma")[1] # ML estimated second parameter
+logLik(fit.IG)
+AIC(fit.IG) # AIC (to be minimized)
+fit.IG$sbc  # BIC (to be minimized)
+
+fit.LOGNO <- histDist(seed$A, family=LOGNO, nbins = 30, main="Log-Normal distribution") #better than the previous one but still not optimal
+fit.LOGNO$df.fit
+fitted(fit.LOGNO, "mu")[1] # ML estimated first parameter
+fitted(fit.LOGNO, "sigma")[1] # ML estimated second parameter
+logLik(fit.LOGNO)
+AIC(fit.LOGNO) # AIC (to be minimized)
+fit.LOGNO$sbc  # BIC (to be minimized)
+
+fit.WEI <- histDist(seed$A, family=WEI, nbins = 30, main="Weibull distribution") # seems to be the best one till now
+fit.WEI$df.fit
+fitted(fit.WEI, "mu")[1] # ML estimated first parameter
+fitted(fit.WEI, "sigma")[1] # ML estimated second parameter
+logLik(fit.WEI)
+AIC(fit.WEI) # AIC (to be minimized)
+fit.WEI$sbc  # BIC (to be minimized)
+
+fit.LO <- histDist(seed$A, family=LO, nbins = 30, main="Logistic distribution") # seems to be the best one till now
+fit.LO$df.fit
+fitted(fit.LO, "mu")[1] # ML estimated first parameter
+fitted(fit.LO, "sigma")[1] # ML estimated second parameter
+logLik(fit.LO)
+AIC(fit.LO) # AIC (to be minimized)
+fit.LO$sbc  # BIC (to be minimized)
+
+fit.ST5 <- histDist(seed$A, family=ST5, nbins = 30, main="Skew t type 5") # seems to be the best one till now
+fit.ST5$df.fit # corretto riferimento a fit.ST5
+fitted(fit.ST5, "mu")[1] # ML estimated first parameter
+fitted(fit.ST5, "sigma")[1] # ML estimated second parameter
+logLik(fit.ST5)
+AIC(fit.ST5) # AIC (to be minimized)
+fit.ST5$sbc  # BIC (to be minimized)
+
+fit.NET <- histDist(seed$A, family=NET, nbins = 30, main="Normal exp distrib") # seems to be the best one till now
+fit.NET$df.fit # corretto riferimento a fit.NET
+fitted(fit.NET, "mu")[1] # ML estimated first parameter
+fitted(fit.NET, "sigma")[1] # ML estimated second parameter
+logLik(fit.NET)
+AIC(fit.NET) # AIC (to be minimized)
+fit.NET$sbc  # BIC (to be minimized)
+
+```
+
+
+
+
+### Model Comparison Summary
+
+A summary table of the **BIC**, **AIC**, and **Log-Likelihood** values for each fitted model is reported below.
+
+```{r,echo= FALSE}
+AIC(fit.EXP,fit.GA,fit.IG,fit.LOGNO,fit.WEI,fit.LO,fit.ST5,fit.NET) # now i obtain the ranking of the models (here i use AIC, but i can use other)
+# the best value is the minimum one
+A.fitted <- matrix(c(
+  fit.EXP$df.fit,  logLik(fit.EXP),  AIC(fit.EXP),  fit.EXP$sbc,
+  fit.GA$df.fit,   logLik(fit.GA),   AIC(fit.GA),   fit.GA$sbc,
+  fit.IG$df.fit,   logLik(fit.IG),   AIC(fit.IG),   fit.IG$sbc,
+  fit.LOGNO$df.fit,logLik(fit.LOGNO),AIC(fit.LOGNO),fit.LOGNO$sbc,
+  fit.WEI$df.fit,  logLik(fit.WEI),  AIC(fit.WEI),  fit.WEI$sbc,
+  fit.LO$df.fit,   logLik(fit.LO),   AIC(fit.LO),   fit.LO$sbc,
+  fit.ST5$df.fit,  logLik(fit.ST5),  AIC(fit.ST5),  fit.ST5$sbc,
+  fit.NET$df.fit,  logLik(fit.NET),  AIC(fit.NET),  fit.NET$sbc
+), ncol=4, byrow=TRUE)
+
+rownames(A.fitted) <- c("EXP","GA","IG","LOGNO","WEI","LO","ST5","NET")
+colnames(A.fitted) <- c("df","LogLik","AIC","BIC")
+A.fitted
+
+
+
+```
+
+
+
+### Model Interpretation
+
+Among the fitted models belonging to the family of positive continuous distributions,  
+according to the **Akaike Information Criterion (AIC)** and the **Bayesian Information Criterion (BIC)**,  
+the **Inverse Gaussian model (IG)** provides the best fit to the *Area* variable.  
+
+However, the **Log-Likelihood** is slightly improved under the **Skew-t type 5 (ST5)** model.  
+This improvement is marginal and comes at the cost of two additional degrees of freedom.  
+Therefore, the **Inverse Gaussian distribution** is selected as the most suitable univariate model.
+
+
+### Descriptive Analysis of the Remaining Variables
+
+Now we analyze the remaining continuous variables of the dataset:  
+**Perimeter (P)**, **Compactness (C)**, **Length of kernel (LK)**, **Width of kernel (WK)**,  
+**Asymmetry coefficient (A_Coef)**, and **Length of kernel groove (LKG)**.
+
+```{r}
+summary(seed[2:5])
+summary(seed[6:7])
+```
+
+Except for the *asymmetry coefficient*, no strong outliers are observed among these variables.
+
+
+
+### Boxplots of the Main Variables
+
+```{r, fig.height=5, fig.width=8, fig.align='center'}
+par(mfrow=c(2,3))
+boxplot(seed$P, main="Boxplot of Perimeter")
+boxplot(seed$C, main="Boxplot of Compactness")
+boxplot(seed$LK, main="Boxplot of Length of kernel")
+boxplot(seed$WK, main="Boxplot of Width of kernel")
+boxplot(seed$A_Coef, main="Boxplot of Asymmetry coefficient")
+boxplot(seed$LKG, main="Boxplot of Kernel groove")
+```
+
+The boxplots confirm that most variables are symmetrically distributed,  
+while the asymmetry coefficient shows a few observations that may be considered outliers.
+
+### Study of Asymmetry Coefficient (A_Coef)
+
+We now focus on the variable **Asymmetry coefficient (A_Coef)** to explore its distribution  
+and evaluate which mixture model best represents its shape.
+
+
+
+```{r}
+# Histogram and kernel density
+hist(seed$A_Coef, freq=FALSE, main="Histogram of seed$A_Coef")
+lines(density(seed$A_Coef), col="red", lwd=2)
+```
+
+
+
+### Fitting a Gamma Mixture with K = 2
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE,include=FALSE}
+set.seed(1)
+fit.GA.2 <- gamlssMXfits(n = 5, seed$A_Coef~1, family = GA, K = 2, data = NULL)
+```
+
+```{r,echo = FALSE}
+# estimate of mu and sigma in group 1
+mu.hat1 <- exp(fit.GA.2[["models"]][[1]][["mu.coefficients"]])   #estimate of mu parameter 
+sigma.hat1 <- exp(fit.GA.2[["models"]][[1]][["sigma.coefficients"]])
+
+# estimate of mu and sigma in group 2
+mu.hat2 <- exp(fit.GA.2[["models"]][[2]][["mu.coefficients"]])    
+sigma.hat2 <- exp(fit.GA.2[["models"]][[2]][["sigma.coefficients"]])
+
+
+hist(seed$A_Coef,freq = FALSE,breaks=50,main="Mixture of 2 Gamma distributions")
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),fit.GA.2[["prob"]][1]*dGA(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat1, sigma = sigma.hat1),lty=2,lwd=3,col=2) #weighted density for cluster one 
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),fit.GA.2[["prob"]][2]*dGA(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat2, sigma = sigma.hat2),lty=2,lwd=3,col=3) #weighted density for cluster two 
+
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),
+      fit.GA.2[["prob"]][1]*dGA(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat1, sigma = sigma.hat1) +
+        fit.GA.2[["prob"]][2]*dGA(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat2, sigma = sigma.hat2),
+       lty = 1, lwd = 3, col = 1)
+
+print(fit.GA.2)
+
+logLik(fit.GA.2)
+fit.GA.2$prob 
+```
+
+
+
+### Fitting a Gamma Mixture with K = 3
+
+```{r,echo = FALSE, message = FALSE, warning = FALSE,include=FALSE}
+set.seed(1)
+fit.GA.3 <- gamlssMXfits(n = 5, seed$A_Coef~1, family = GA, K = 3, data = NULL)
+```
+
+```{r,echo=FALSE}
+
+
+# estimate of mu and sigma in group 1
+mu.hat1 <- exp(fit.GA.3[["models"]][[1]][["mu.coefficients"]])   #estimate of mu parameter 
+sigma.hat1 <- exp(fit.GA.3[["models"]][[1]][["sigma.coefficients"]])
+
+# estimate of mu and sigma in group 2
+mu.hat2 <- exp(fit.GA.3[["models"]][[2]][["mu.coefficients"]])    
+sigma.hat2 <- exp(fit.GA.3[["models"]][[2]][["sigma.coefficients"]])
+
+# estimate of mu and sigma in group 3
+mu.hat3 <- exp(fit.GA.3[["models"]][[3]][["mu.coefficients"]])    
+sigma.hat3 <- exp(fit.GA.3[["models"]][[3]][["sigma.coefficients"]])
+
+
+hist(seed$A_Coef,freq = FALSE,breaks=50,main="Mixture of 3 Gamma distributions")
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),fit.GA.3[["prob"]][1]*dGA(seq(min(seed$A_Coef),max(seed$A),length=length(seed$A)), mu = mu.hat1, sigma = sigma.hat1),lty=2,lwd=3,col=2) #weighted density for cluster one 
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),fit.GA.3[["prob"]][2]*dGA(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat2, sigma = sigma.hat2),lty=2,lwd=3,col=3) #weighted density for cluster two 
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),fit.GA.3[["prob"]][3]*dGA(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat3, sigma = sigma.hat3),lty=2,lwd=3,col=4) #weighted density for cluster three
+
+
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),
+      fit.GA.3[["prob"]][1]*dGA(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat1, sigma = sigma.hat1) +
+        fit.GA.3[["prob"]][2]*dGA(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat2, sigma = sigma.hat2)+
+          fit.GA.3[["prob"]][3]*dGA(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat3, sigma = sigma.hat3),
+      lty = 1, lwd = 3, col = 1)
+print(fit.GA.3)
+
+logLik(fit.GA.3) #
+```
+
+
+
+
+### Fitting a Weibull Mixture with K = 2
+
+```{r,echo = FALSE, message = FALSE, warning = FALSE,include=FALSE}
+set.seed(1)
+fit.WE.2 <- gamlssMXfits(n = 5, seed$A_Coef~1, family = WEI, K = 2, data = NULL)
+```
+
+```{r, echo=FALSE}
+# Weibull mixture plot
+hist(seed$A_Coef, freq=FALSE, breaks=50, main="Mixture of 2 Weibull distributions", xlab="seed$A_Coef")
+
+mu.hat1 <- exp(fit.WE.2[["models"]][[1]][["mu.coefficients"]])
+sigma.hat1 <- exp(fit.WE.2[["models"]][[1]][["sigma.coefficients"]])
+mu.hat2 <- exp(fit.WE.2[["models"]][[2]][["mu.coefficients"]])
+sigma.hat2 <- exp(fit.WE.2[["models"]][[2]][["sigma.coefficients"]])
+
+lines(seq(min(seed$A_Coef), max(seed$A_Coef), length=length(seed$A_Coef)),
+      fit.WE.2[["prob"]][1]*dWEI(seq(min(seed$A_Coef), max(seed$A_Coef), length=length(seed$A_Coef)),
+                                  mu=mu.hat1, sigma=sigma.hat1),
+      lty=2, lwd=3, col=2)
+lines(seq(min(seed$A_Coef), max(seed$A_Coef), length=length(seed$A_Coef)),
+      fit.WE.2[["prob"]][2]*dWEI(seq(min(seed$A_Coef), max(seed$A_Coef), length=length(seed$A_Coef)),
+                                  mu=mu.hat2, sigma=sigma.hat2),
+      lty=2, lwd=3, col=3)
+
+lines(seq(min(seed$A_Coef), max(seed$A_Coef), length=length(seed$A_Coef)),
+      fit.WE.2[["prob"]][1]*dWEI(seq(min(seed$A_Coef), max(seed$A_Coef), length=length(seed$A_Coef)),
+                                  mu=mu.hat1, sigma=sigma.hat1) +
+      fit.WE.2[["prob"]][2]*dWEI(seq(min(seed$A_Coef), max(seed$A_Coef), length=length(seed$A_Coef)),
+                                  mu=mu.hat2, sigma=sigma.hat2),
+      lty=1, lwd=3, col=1)
+print(fit.WE.2)
+
+logLik(fit.WE.2)
+```
+
+### Weibull Mixture Model (K = 3)
+
+Finally, we fit a **Weibull mixture with three components (K = 3)** to verify whether  
+adding another subgroup improves the model’s fit for the *Asymmetry coefficient (A_Coef)*.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, include=FALSE}
+set.seed(1)
+fit.WE.3 <- gamlssMXfits(n = 5, seed$A_Coef~1, family = WEI, K = 3, data = NULL)
+```
+
+```{r, echo=FALSE}
+# estimate of mu and sigma in group 1
+mu.hat1 <- exp(fit.WE.3[["models"]][[1]][["mu.coefficients"]])
+sigma.hat1 <- exp(fit.WE.3[["models"]][[1]][["sigma.coefficients"]])
+
+# estimate of mu and sigma in group 2
+mu.hat2 <- exp(fit.WE.3[["models"]][[2]][["mu.coefficients"]])    
+sigma.hat2 <- exp(fit.WE.3[["models"]][[2]][["sigma.coefficients"]])
+
+# estimate of mu and sigma in group 3
+mu.hat3 <- exp(fit.WE.3[["models"]][[3]][["mu.coefficients"]])    
+sigma.hat3 <- exp(fit.WE.3[["models"]][[3]][["sigma.coefficients"]])
+
+hist(seed$A_Coef,freq = FALSE,breaks=50,main="Mixture of 3 Weibull distributions")
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),fit.WE.3[["prob"]][1]*dWEI(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat1, sigma = sigma.hat1),lty=2,lwd=3,col=2) #weighted density for cluster one 
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),fit.WE.3[["prob"]][2]*dWEI(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat2, sigma = sigma.hat2),lty=2,lwd=3,col=3) #weighted density for cluster two 
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),fit.WE.3[["prob"]][3]*dWEI(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat3, sigma = sigma.hat3),lty=2,lwd=3,col=4) #weighted density for cluster tHREE
+
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),
+      fit.WE.3[["prob"]][1]*dWEI(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat1, sigma = sigma.hat1) +
+        fit.WE.3[["prob"]][2]*dWEI(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat2, sigma = sigma.hat2)+
+          fit.WE.3[["prob"]][3]*dWEI(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat3, sigma = sigma.hat3),
+      lty = 1, lwd = 3, col = 1)
+
+print(fit.WE.3)
+
+logLik(fit.WE.3)
+```
+
+**Interpretation:**  
+The Weibull mixture with *K = 3* produces a slightly improved fit compared to *K = 2*,  
+as seen by the lower AIC and SBC values.  
+However, the improvement is minor and does not justify the additional complexity introduced  
+by adding another component.
+
+
+### Inverse Gamma Mixture Models
+
+We now test **Inverse Gamma mixtures** to compare their ability to model the asymmetry coefficient.  
+We start with **K = 2** and then extend to **K = 3** components.
+
+
+
+#### Inverse Gamma Mixture (K = 2)
+
+```{r,echo = FALSE, message = FALSE, warning = FALSE,include=FALSE }
+set.seed(1)
+fit.IG.2 <- gamlssMXfits(n = 5, seed$A_Coef~1, family = IG, K = 2, data = NULL)
+```
+
+```{r,echo=FALSE}
+# Plot mixture K=2
+hist(seed$A_Coef, freq = FALSE, breaks = 50, main = "Mixture of 2 Inverse Gamma distributions", xlab = "seed$A_Coef")
+
+mu.hat1 <- exp(fit.IG.2[["models"]][[1]][["mu.coefficients"]])
+sigma.hat1 <- exp(fit.IG.2[["models"]][[1]][["sigma.coefficients"]])
+mu.hat2 <- exp(fit.IG.2[["models"]][[2]][["mu.coefficients"]])
+sigma.hat2 <- exp(fit.IG.2[["models"]][[2]][["sigma.coefficients"]])
+
+lines(seq(min(seed$A_Coef), max(seed$A_Coef), length = length(seed$A_Coef)),
+      fit.IG.2[["prob"]][1]*dIG(seq(min(seed$A_Coef), max(seed$A_Coef), length = length(seed$A_Coef)),
+                                mu = mu.hat1, sigma = sigma.hat1),
+      lty = 2, lwd = 3, col = 2)
+lines(seq(min(seed$A_Coef), max(seed$A_Coef), length = length(seed$A_Coef)),
+      fit.IG.2[["prob"]][2]*dIG(seq(min(seed$A_Coef), max(seed$A_Coef), length = length(seed$A_Coef)),
+                                mu = mu.hat2, sigma = sigma.hat2),
+      lty = 2, lwd = 3, col = 3)
+lines(seq(min(seed$A_Coef), max(seed$A_Coef), length = length(seed$A_Coef)),
+      fit.IG.2[["prob"]][1]*dIG(seq(min(seed$A_Coef), max(seed$A_Coef), length = length(seed$A_Coef)),
+                                mu = mu.hat1, sigma = sigma.hat1) +
+      fit.IG.2[["prob"]][2]*dIG(seq(min(seed$A_Coef), max(seed$A_Coef), length = length(seed$A_Coef)),
+                                mu = mu.hat2, sigma = sigma.hat2),
+      lty = 1, lwd = 3, col = 1)
+
+print(fit.IG.2)
+
+logLik(fit.IG.2)
+```
+
+
+
+#### Inverse Gamma Mixture (K = 3)
+
+```{r,echo = FALSE, message = FALSE, warning = FALSE,include=FALSE}
+set.seed(1)
+fit.IG.3 <- gamlssMXfits(n = 5, seed$A_Coef~1, family = IG, K = 3, data = NULL)
+```
+
+```{echo = FALSE}
+# estimate of mu and sigma in group 1
+mu.hat1 <- exp(fit.IG.3[["models"]][[1]][["mu.coefficients"]]) 
+sigma.hat1 <- exp(fit.IG.3[["models"]][[1]][["sigma.coefficients"]])
+
+# estimate of mu and sigma in group 2
+mu.hat2 <- exp(fit.IG.3[["models"]][[2]][["mu.coefficients"]])    
+sigma.hat2 <- exp(fit.IG.3[["models"]][[2]][["sigma.coefficients"]])
+
+mu.hat3 <- exp(fit.IG.3[["models"]][[3]][["mu.coefficients"]]) 
+sigma.hat3 <- exp(fit.IG.3[["models"]][[3]][["sigma.coefficients"]])
+
+hist(seed$A_Coef,freq = FALSE,breaks=50,main="Mixture of 3 Inverse Gamma distributions")
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),fit.IG.3[["prob"]][1]*dRG(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat1, sigma = sigma.hat1),lty=2,lwd=3,col=2) #weighted density for cluster one 
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),fit.IG.3[["prob"]][2]*dRG(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat2, sigma = sigma.hat2),lty=2,lwd=3,col=3) #weighted density for cluster two 
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),fit.IG.3[["prob"]][3]*dRG(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat3, sigma = sigma.hat3),lty=2,lwd=3,col=4) #weighted density for cluster two 
+
+lines(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)),
+      fit.IG.3[["prob"]][1]*dIG(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat1, sigma = sigma.hat1) +
+        fit.IG.3[["prob"]][2]*dIG(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat2, sigma = sigma.hat2) +
+        fit.IG.3[["prob"]][3]*dIG(seq(min(seed$A_Coef),max(seed$A_Coef),length=length(seed$A_Coef)), mu = mu.hat3, sigma = sigma.hat3),
+          lty = 1, lwd = 3, col = 1)
+
+print(fit.IG.3)
+
+logLik(fit.IG.3)
+```
+
+**Interpretation:**  
+The Inverse Gamma mixtures also reproduce the asymmetry in the *A_Coef* distribution effectively.  
+The models with *K = 2* and *K = 3* yield comparable fits, and adding a third component  
+does not significantly improve the AIC or SBC values.  
+Therefore, **K = 2 or K = 3** are both reasonable representations, depending on the trade-off between  
+model complexity and interpretability.
+
+
+### Univariate Analysis for A_Coef with K = 1
+
+Now we apply the **univariate analysis** to the variable *A_Coef* using several single-component models (K = 1).  
+This step helps identify which distribution provides the best fit to the data.
+
+```{r,include=FALSE}
+# Fitting various univariate models for A_Coef
+fit.EXP <- gamlss(seed$A_Coef ~ 1, family = EXP)
+fit.GA  <- gamlss(seed$A_Coef ~ 1, family = GA)
+fit.IG  <- gamlss(seed$A_Coef ~ 1, family = IG)
+fit.LOGNO <- gamlss(seed$A_Coef ~ 1, family = LOGNO)
+fit.WEI <- gamlss(seed$A_Coef ~ 1, family = WEI)
+fit.LO  <- gamlss(seed$A_Coef ~ 1, family = LO)
+fit.ST5 <- gamlss(seed$A_Coef ~ 1, family = ST5)
+fit.NET <- gamlss(seed$A_Coef ~ 1, family = NET)
+```
+
+
+
+### Fitted Distributions Visualization
+
+The following plots show the histogram of *A_Coef* with the fitted density (in red) for each distribution.
+
+```{r, fig.height=6, fig.width=8, fig.align='center',echo=FALSE}
+#try exponential distribution to fit the data
+set.seed(1)
+par(mfrow=c(2,4)) # Questo comando imposta il layout per 1 riga e 2 colonne, ma viene sovrascritto
+                   # quando si generano 8 grafici successivi in sequenza.
+
+fit.EXP <- histDist(seed$A_Coef, family=EXP, nbins = 30, main="Exponential distribution") #best exponential model with respect to the histogram to fit the data
+fit.EXP$df.fit # number of parameters
+fitted(fit.EXP, "mu")[1] # ML estimated parameter
+logLik(fit.EXP)
+AIC(fit.EXP) # AIC (to be minimized)
+fit.EXP$sbc  # BIC (to be minimized)
+
+fit.GA <- histDist(seed$A_Coef, family=GA, nbins = 30, main="Gamma distribution")
+fit.GA$df.fit # number of parameters
+fitted(fit.GA, "mu")[1] # ML estimated first parameter
+fitted(fit.GA, "sigma")[1] # ML estimated second parameter
+logLik(fit.GA)
+AIC(fit.GA) # AIC (to be minimized)
+fit.GA$sbc  # BIC (to be minimized)
+
+fit.IG <- histDist(seed$A_Coef, family=IG, nbins = 30, main="Inverse Gaussian distribution") #this is not good
+fit.IG$df.fit
+fitted(fit.IG, "mu")[1] # ML estimated first parameter
+fitted(fit.IG, "sigma")[1] # ML estimated second parameter
+logLik(fit.IG)
+AIC(fit.IG) # AIC (to be minimized)
+fit.IG$sbc  # BIC (to be minimized)
+
+fit.LOGNO <- histDist(seed$A_Coef, family=LOGNO, nbins = 30, main="Log-Normal distribution") #better than the previous one but still not optimal
+fit.LOGNO$df.fit
+fitted(fit.LOGNO, "mu")[1] # ML estimated first parameter
+fitted(fit.LOGNO, "sigma")[1] # ML estimated second parameter
+logLik(fit.LOGNO)
+AIC(fit.LOGNO) # AIC (to be minimized)
+fit.LOGNO$sbc  # BIC (to be minimized)
+
+fit.WEI <- histDist(seed$A_Coef, family=WEI, nbins = 30, main="Weibull distribution") # seems to be the best one till now
+fit.WEI$df.fit
+fitted(fit.WEI, "mu")[1] # ML estimated first parameter
+fitted(fit.WEI, "sigma")[1] # ML estimated second parameter
+logLik(fit.WEI)
+AIC(fit.WEI) # AIC (to be minimized)
+fit.WEI$sbc  # BIC (to be minimized)
+
+fit.LO <- histDist(seed$A_Coef, family=LO, nbins = 30, main="Logistic distribution") # seems to be the best one till now
+fit.LO$df.fit
+fitted(fit.LO, "mu")[1] # ML estimated first parameter
+fitted(fit.LO, "sigma")[1] # ML estimated second parameter
+logLik(fit.LO)
+AIC(fit.LO) # AIC (to be minimized)
+fit.LO$sbc  # BIC (to be minimized)
+
+fit.ST5 <- histDist(seed$A_Coef, family=ST5, nbins = 30, main="Skew t type 5") # seems to be the best one till now
+fit.LO$df.fit # Qui c'è un errore nel codice originale, si riferisce a fit.LO invece di fit.ST5
+fitted(fit.LO, "mu")[1] # Qui c'è un errore nel codice originale, si riferisce a fit.LO invece di fit.ST5
+fitted(fit.LO, "sigma")[1] # Qui c'è un errore nel codice originale, si riferisce a fit.LO invece di fit.ST5
+logLik(fit.LO) # Qui c'è un errore nel codice originale, si riferisce a fit.LO invece di fit.ST5
+AIC(fit.LO) # Qui c'è un errore nel codice originale, si riferisce a fit.LO invece di fit.ST5
+fit.LO$sbc  # Qui c'è un errore nel codice originale, si riferisce a fit.LO invece di fit.ST5
+
+fit.NET <- histDist(seed$A_Coef, family=NET, nbins = 30, main="Normal exp distrib") # seems to be the best one till now
+fit.LO$df.fit # Qui c'è un errore nel codice originale, si riferisce a fit.LO invece di fit.NET
+fitted(fit.LO, "mu")[1] # Qui c'è un errore nel codice originale, si riferisce a fit.LO invece di fit.NET
+fitted(fit.LO, "sigma")[1] # Qui c'è un errore nel codice originale, si riferisce a fit.LO invece di fit.NET
+logLik(fit.LO) # Qui c'è un errore nel codice originale, si riferisce a fit.LO invece di fit.NET
+AIC(fit.LO) # Qui c'è un errore nel codice originale, si riferisce a fit.LO invece di fit.NET
+fit.LO$sbc  # Qui c'è un errore nel codice originale, si riferisce a fit.LO invece di fit.NET
+
+```
+
+### Model Comparison: AIC, BIC and Log-Likelihood
+
+We summarize the model fit statistics — **degrees of freedom (df)**, **log-likelihood**, **AIC**, and **BIC** —  
+for all fitted univariate distributions.
+
+```{r,echo = FALSE}
+AIC(fit.EXP,fit.GA,fit.IG,fit.LOGNO,fit.WEI,fit.LO,fit.ST5,fit.NET) # now i obtain the ranking of the models (here i use AIC, but i can use other)
+# the best value is the minimum one
+A.fitted <- matrix(c(
+  fit.EXP$df.fit,  logLik(fit.EXP),  AIC(fit.EXP),  fit.EXP$sbc,
+  fit.GA$df.fit,   logLik(fit.GA),   AIC(fit.GA),   fit.GA$sbc,
+  fit.IG$df.fit,   logLik(fit.IG),   AIC(fit.IG),   fit.IG$sbc,
+  fit.LOGNO$df.fit,logLik(fit.LOGNO),AIC(fit.LOGNO),fit.LOGNO$sbc,
+  fit.WEI$df.fit,  logLik(fit.WEI),  AIC(fit.WEI),  fit.WEI$sbc,
+  fit.LO$df.fit,   logLik(fit.LO),   AIC(fit.LO),   fit.LO$sbc,
+  fit.ST5$df.fit,  logLik(fit.ST5),  AIC(fit.ST5),  fit.ST5$sbc,
+  fit.NET$df.fit,  logLik(fit.NET),  AIC(fit.NET),  fit.NET$sbc
+), ncol=4, byrow=TRUE)
+
+rownames(A.fitted) <- c("EXP","GA","IG","LOGNO","WEI","LO","ST5","NET")
+colnames(A.fitted) <- c("df","LogLik","AIC","BIC")
+A.fitted
+```
+
+
+
+### Model Interpretation
+
+According to the comparison table, the **Weibull distribution** provides the best fit for *A_Coef*,  
+showing the lowest **AIC** and **BIC** values among all tested models.  
+This suggests that the *A_Coef* variable follows a positively skewed continuous distribution  
+that is well captured by the Weibull family.
+
+
+### Likelihood Ratio Test (LRT)
+
+We can further compare two nested distributions using the **Likelihood Ratio Test (LRT)**.  
+Under the null hypothesis, the simpler model (Exponential) is correct;  
+under the alternative, the more complex model (Gamma) provides a better fit.
+
+```{r}
+LR.test(fit.EXP, fit.GA)
+```
+
+### LRT Interpretation
+
+The test compares the log-likelihoods of the two models.  
+If the **p-value < 0.05**, we reject the null hypothesis — meaning the more complex model fits significantly better.  
+If **p-value > 0.05**, we accept the null hypothesis — indicating that the simpler model is adequate.
+
+In this case, the p-value is **0**, so we reject the null hypothesis.  
+Therefore, the **Gamma distribution** provides a significantly better fit than the Exponential model.
+
+
+
+# PCA
+
+## PRINCIPAL COMPONENT ANALYSIS
+
+PCA provides a tool to find a low dimensional representation of the “seed” dataset, allowing to summarize it with a smaller number of representative variables that still collectively explain most of the variability in the original set.
+
+Univariate analysis already made us aware of the presence of different scale measures, resulting in different values of mean and variance which are not reliable for comparison purposes, and of different measurement units.
+
+```{r}
+round(apply(seed[-8],2,mean),4)
+round(apply(seed[-8],2,var),4)
+
+```
+In addiction we expect that for length of kernel is higly related to Perimeter or to Area for
+example, so PCA should be effective.
+Since PCA is sensitive to scaling and it is undeiderable for the principal components obtaind to
+depend on aribtrary choice of scaling individual variables, each variable was scaled to have
+standard deviation equal to 1 and mean equal to 0
+
+
+```{r}
+df.scaled<-scale(seed[-8])
+head(round(df.scaled,digits=3))
+```
+
+Principal components of the standardized variables can then be obtained by doing the eigen
+decomposition of the sample correlation matrix.
+
+```{r}
+cor_matrix<-cor(df.scaled)        #correlation matrix
+head(round(cor_matrix,digits=3))
+```
+and we compute eingevector and eingvectors
+
+```{r}
+eigen<-eigen(cor_matrix)          #compute eigenvectors and eigen value
+phi<-eigen$vectors                #extract loading and store them in "phi" matrix
+head(round(phi,digits=2),7)
+
+```
+```{r}
+phi<--phi                            #invert the signs of colums (loss->gain)
+row.names(phi)<-colnames(df.scaled)  #rename rows in phi matrix
+colnames(phi)<- c("PC1","PC2","PC3","PC4","PC5","PC6","PC7") #rename column in phi matrix
+head(round(phi,digits=2),7)
+
+```
+By briefly examining the loadings we note that:
+  • the first loading vector ф1, considering the absolute value, places equal weights (≈0,44) on
+Area,Perimeter,Length of kernel,Width of kernel and Length of kernel groove. Less weights
+is instead placed on Compactness(0,28) and musch less is placed on A_Coeff(-0,12). This
+seems to suggest that PC1 mostly corresponds to a measure of all featuers except A_coeff.
+   • The second loading vector ф2 place a heavy weight (-0,72) on A_Coeff and a relevant
+weight(0.53) on Compactness. These 2 features are the ones that less contribute to PC1. In
+addition also LKG has a considerable weight (-0,38).
+   • The third loading vector ф3 place a quite considerable weight on A_Coeff(0,68) but also on
+C(0,63). Less weight on the remaining ones.
+   • …
+
+
+At this point of the PCA process, the appropriate number (q<7) of principal components must be
+selected. The choice can be based on the cumulative proportion of variance explained criteria, as
+well as on the scree plot criteria.
+
+```{r, echo= FALSE, message= FALSE}
+#PVE
+PVE <- eigen$values/sum(eigen$values)
+(PVE <- round(PVE, 2))
+cumsum(PVE)
+#we here use ggplot, to have better plots,or we can use tidyverse and gridextra packages
+library(gridExtra) 
+library(tidyverse)
+PVEplot <- qplot(c(1:7), PVE) + geom_line() + xlab("Principal Component") + ylab("PVE") + ggtitle("Scree Plot") +  ylim(0, 1)
+cumPVE <- qplot(c(1:7), cumsum(PVE)) + geom_line() + xlab("Principal Component") +ylab(NULL) +  ggtitle("Cumulative Scree Plot") +  ylim(0,1)
+grid.arrange(PVEplot, cumPVE, ncol = 2)
+```
+```{r}
+#biplot
+PC1 <-- df.scaled %*% phi[,1]
+PC2 <- df.scaled %*% phi[,2]
+PC <- data.frame(units = rownames(seed), PC1, PC2)
+head(PC)
+ggplot(PC, aes(PC1, PC2)) + 
+  modelr::geom_ref_line(h = 0) +
+  modelr::geom_ref_line(v = 0) +
+  geom_text(aes(label="."), size = 9) +
+  xlab("PCA1(72%)") + 
+  ylab("PCA2(17%)") + 
+  ggtitle("First Two Principal Components of seed Data set")
+# PCA biplot - fixed version
+pr.out <- prcomp(seed[1:7], scale = TRUE)
+
+pr.out$rotation[,1] <- -pr.out$rotation[,1]
+pr.out$x[,1] <- -pr.out$x[,1]
+
+biplot(pr.out,
+       scale = 0,
+       cex = 0.7,                   # dimensione testo/frecce
+       col = c("gray30", "red"),    # punti grigi, variabili rosse
+       xlabs = rep(".", nrow(seed)),# toglie i numeri delle etichette
+       main = "Biplot of First Two Principal Components")
+
+```
+
+# CLUSTER ANALYSIS
+```{r, echo= FALSE, message=FALSE,include=FALSE}
+seed$target <- as.numeric(as.factor(seed$target))
+
+```
+
+
+```{r}
+# Remove target variable (8th column)
+seed_notarget <- seed[ , -8]
+df.scaled<-scale(seed_notarget)
+pairs(df.scaled,gap=0,pch=16) #pairwise scatterplot matrix
+
+```
+
+
+```{r}
+set.seed(1)
+random_seed <- apply(seed, 2,function(seed){runif(length(seed), min(seed), max(seed))})
+random_seed<-as.data.frame(random_seed)
+scaled.random_seed<-scale(random_seed)
+pairs(scaled.random_seed,gap=0,pch=21)
+```
+
+
+```{r}
+# Plot the standardized df data 
+
+fviz_pca_ind(prcomp(df.scaled), title = "PCA - seed data",
+             habillage = seed$target, palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+
+```
+
+
+```{r}
+# Plot the standardized df data 
+fviz_pca_ind(prcomp(scaled.random_seed), title = "PCA - random data",
+              palette = "jco",
+             geom = "point", ggtheme = theme_classic(),
+             legend = "bottom")
+```
+
+## Hopskin
+```{r, warning = FALSE, message= FALSE}
+library(clustertend)
+# Compute Hopkins statistic for the iris dataset
+set.seed(1)
+hopkins(df.scaled, n = nrow(df.scaled)-1)
+# Compute Hopkins statistic for a random dataset
+set.seed(1)
+hopkins(scaled.random_seed, n = nrow(scaled.random_seed)-1)
+
+```
+
+## VAT alghoritm
+```{r}
+fviz_dist(dist(df.scaled), show_labels = FALSE)+labs(title = "Seed data")
+
+
+```
+
+```{r}
+scaled.Random_seed<-scale(random_seed[-8])
+fviz_dist(dist(scaled.Random_seed), show_labels = FALSE)+labs(title = "Random data")
+```
+
+## DETERMINING NUMBER OF CLUSTER
+
+```{r, echo = FALSE, message= FALSE,nclude=FALSE }
+library(factoextra)
+library(NbClust)
+library(cluster)
+```
+
+
+```{r}
+## fviz_nbclust function
+set.seed(1)
+manhDist <- dist(df.scaled,method = "manhattan")
+```
+
+```{r}
+# Elbow method
+par(mfrow=c(2,2))
+fviz_nbclust(df.scaled, kmeans, nstart = 25, method = "wss") +geom_vline(xintercept = 4, linetype = 2)+labs(subtitle = "Elbow method-kmeans-euclidean")
+fviz_nbclust(df.scaled, pam, nstart = 25, method = "wss") +geom_vline(xintercept = 4, linetype = 2)+labs(subtitle = "Elbow method-pam-euclidean")
+fviz_nbclust(df.scaled, pam,manhDist, nstart = 25, method = "wss") +geom_vline(xintercept = 4, linetype = 2)+labs(subtitle = "Elbow method-pam-manhattan")
+
+```
+
+
+```{r}
+# Silhouette method
+set.seed(1)
+fviz_nbclust(df.scaled, kmeans,nstart = 25, method = "silhouette")+labs(subtitle = "Silhouette method-kmeans-euclidean")
+fviz_nbclust(df.scaled, pam,nstart = 25, method = "silhouette")+labs(subtitle = "Silhouette method-pam-euclidean")
+fviz_nbclust(df.scaled, pam, manhDist ,nstart = 25, method = "silhouette")+labs(subtitle = "Silhouette method-pam-manhattan")
+
+```
+
+
+
+```{r}
+# Gap statistic
+# nboot = 50 to keep the function speedy.
+# recommended value: nboot = 500 for your analysis.
+# Use verbose = FALSE to hide computing progression.
+set.seed(1)
+fviz_nbclust(df.scaled, kmeans, nstart = 25, method = "gap_stat", nboot = 500)+labs(subtitle = "Gap statistic-kmeans")
+fviz_nbclust(df.scaled, pam, nstart = 25, method = "gap_stat", nboot = 50)+labs(subtitle = "Gap statistic-pam-euclidean")
+fviz_nbclust(df.scaled, pam,manhDist, nstart = 25, method = "gap_stat", nboot = 50)+labs(subtitle = "Gap statistic-pam-manhattan")
+
+```
+
+
+
+Now, we can proceed with the hierarchical cluster analysis.
+The first clustering algorithm that I applied is the agglomerative hierarchical clustering, that is a
+“bottom-up” approach: each observation starts in its own cluster (leaf), and pairs of cluster
+are merged as on e moves up the hierarchy. This process goes on until there is just one single big
+cluster (root). In this case the leaves are 210, and for every step, the algorithm merges pairs of
+cluster with the lowest dissimilarity according to a different given linkage method, and then it
+moves up the hierarchy, until there is just one single big cluster, with all the observations
+within, by building a sort of tree diagram called dendrogram.
+I will calculate the dissimilarity matrix using two different distances: the Euclidean, that is the most
+used, and the Manhattan, that reduces the effects of outliers. I start using the Euclidean distance,
+and respectively single, average and complete linkage method
+
+```{r}
+# Compute the dissimilarity matrix
+res.dist <- dist(df.scaled, method = "euclidean")
+res.dist2 <- dist(df.scaled, method = "manhattan")
+res.hc<-hclust(d=res.dist,method="single")
+#dendogram
+fviz_dend(res.hc,cex=0.1,main="Single linkage method and euclidean distance")
+
+
+```
+
+now we compute **cophenetic distance**
+```{r}
+#compute cophenetic distance
+cor(res.dist,cophenetic(res.hc))
+```
+One way to measure how well the cluster tree generated by the hclust() function reflects our data
+is to compute the correlation between the cop henetic distances and the original distances
+generated by the dist() function. The cophenetic dissimilarity/distance of two units is a measure
+of how similar those two units have to be in order to be grouped into the same cluster. From a
+practical point of view, the cophenetic distance between two units is the height of the
+dendrogram where the two branches that include the two units merge in to a single branch
+(height of the fusion)
+
+
+
+```{r}
+res.hc<-hclust(d=res.dist,method="average")
+fviz_dend(res.hc,cex=0.1,main="Average linkage method and euclidean distance")
+
+```
+visualizing COMPLETE LINKAGE 
+```{r}
+res.hc<-hclust(d=res.dist,method="complete")
+fviz_dend(res.hc,cex=0.1,main="Complete linkage method and euclidean distance")
+cor(res.dist,cophenetic(res.hc))
+```
+
+```{r}
+cor(res.dist,cophenetic(res.hc))
+```
+
+vizuaizing SINGLE  wih MANHATTAN DISTANCE
+```{r}
+res.hc<-hclust(d=res.dist2,method="single")
+fviz_dend(res.hc,cex=0.1,main="single linkage method and manhattan distance")
+
+```
+```{r}
+cor(res.dist2,cophenetic(res.hc))
+```
+now visualizing AVERAGE linkage with MANHATTAN
+
+```{r}
+res.hc<-hclust(d=res.dist2,method="average")
+fviz_dend(res.hc,cex=0.1,main="Average linkage method and manhattan distance",)
+
+
+```
+```{r}
+cor(res.dist2,cophenetic(res.hc))
+```
+now visualizing COMPLETE LINKAGE and MANHATTAN
+```{r}
+res.hc<-hclust(d=res.dist2,method="complete")
+fviz_dend(res.hc,cex=0.1,main="Complete linkage method and manhattan distance")
+```
+
+
+```{r}
+cor(res.dist2,cophenetic(res.hc))
+```
+Agglomerative hierarchical clustering methods can be divided into two groups: those based on **distances between individual observations** (single, average, and complete linkage) and those that use **cluster centroids** (centroid and Ward’s methods).
+
+Centroid and Ward’s linkage treat each cluster as represented by its center, making them suitable only for numerical datasets. Among them, **Ward’s method** is particularly effective because it **iteratively minimizes the within-cluster sum of squares (WSS)** while **maximizing the between-cluster sum of squares (BSS)**. Consequently, it tends to produce compact, well-separated clusters based on Euclidean distance
+
+```{r}
+#centroid and ward method
+res.centroid<-hclust(d=res.dist,method="centroid")
+fviz_dend(res.centroid,cex=0.1,main="Centroid linkage method and euclidean distance")
+cor(res.dist,cophenetic(res.centroid))
+```
+
+```{r}
+res.ward<-hclust(d=res.dist,method="ward.D2")
+fviz_dend(res.ward,cex=0.1,main="Ward linkage method and euclidean distance")
+cor(res.dist,cophenetic(res.ward))
+```
+
+
+```{r}
+library(NbClust)
+set.seed(1)
+
+# Calcolo NbClust
+nb <- NbClust(df.scaled,
+              distance = "euclidean",
+              min.nc = 2,
+              max.nc = 10,
+              method = "kmeans")
+
+# Tabella dei K suggeriti dai diversi indici
+best_k_table <- table(nb$Best.nc[1, ])
+print(best_k_table)
+
+# Grafico a barre dei voti per ogni K
+barplot(best_k_table,
+        xlab = "Number of cluster  (K)",
+        ylab = "Frequency  among all indices",
+        main = "Optimal number of cluster k=3",
+        col = "steelblue")
+
+
+
+
+
+```
+
+```{r,echo=FALSE}
+# Compute NbClust using Ward's method
+wa <- NbClust(df.scaled,
+              distance = "euclidean",
+              min.nc = 2,
+              max.nc = 10,
+              method = "ward.D2")
+
+# Table of suggested number of clusters (K)
+best_k_table_ward <- table(wa$Best.nc[1, ])
+print(best_k_table_ward)
+
+# Bar plot of votes for each K
+barplot(best_k_table_ward,
+        xlab = "Number of clusters (K)",
+        ylab = "Number of indices suggesting K",
+        main = "Optimal number of clusters k=3- Ward’s method)",
+        col = "steelblue")
+```
+
+
+```{r,echo=FALSE}
+library(NbClust)
+set.seed(1)
+
+# Compute NbClust using Single linkage method
+si <- NbClust(df.scaled,
+              distance = "euclidean",
+              min.nc = 2,
+              max.nc = 10,
+              method = "single")
+
+# Table of suggested number of clusters (K)
+best_k_table_single <- table(si$Best.nc[1, ])
+print(best_k_table_single)
+
+# Bar plot of votes for each K
+barplot(best_k_table_single,
+        xlab = "Number of clusters (K)",
+        ylab = "Number of indices suggesting K",
+        main = "Optimal number of clust k=2 -Single linkage method)",
+        col = "steelblue")
+
+```
+
+
+```{r,echo=FALSE}
+library(NbClust)
+set.seed(1)
+
+# Compute NbClust using Complete linkage method
+co <- NbClust(df.scaled,
+              distance = "euclidean",
+              min.nc = 2,
+              max.nc = 10,
+              method = "complete")
+
+# Table of suggested number of clusters (K)
+best_k_table_complete <- table(co$Best.nc[1, ])
+print(best_k_table_complete)
+
+# Bar plot of votes for each K
+barplot(best_k_table_complete,
+        xlab = "Number of clusters (K)",
+        ylab = "Number of indices suggesting K",
+        main = "Optimal number of clusk=3 - Complete linkage method)",
+        col = "steelblue")
+
+```
+```{r, echo=FALSE}
+library(NbClust)
+set.seed(1)
+
+# Compute NbClust using Average linkage method
+av <- NbClust(df.scaled,
+              distance = "euclidean",
+              min.nc = 2,
+              max.nc = 10,
+              method = "average")
+
+# Table of suggested number of clusters (K)
+best_k_table_average <- table(av$Best.nc[1, ])
+print(best_k_table_average)
+
+# Bar plot of votes for each K
+barplot(best_k_table_average,
+        xlab = "Number of clusters (K)",
+        ylab = "Number of indices suggesting K",
+        main = "Optimal number of clust k=3 -Average linkage method)",
+        col = "steelblue")
+
+```
+As we can seen befotr, k=3 and later k=2 seem to be the two candidate to better fit the optimal number of cluster in our data 
+
+## choosing the alghorithm
+```{r,warning = FALSE, message = FALSE}
+clmethods <- c("hierarchical","kmeans","pam")
+intern <- clValid(df.scaled, nClust = 2:6,clMethods = clmethods,
+validation = "internal")
+summary(intern)
+
+```
+
+```{r,warning = FALSE}
+stability <- clValid(df.scaled, nClust = 2:6,clMethods = clmethods, validation = "stability")
+ summary(stability)
+```
+### Cluster Validation
+
+To further evaluate the clustering performance, both **internal** and **stability** validation measures were computed using the `clValid` package.  
+These indices assess the quality and robustness of the clusters obtained through different algorithms (hierarchical, k-means, and PAM) across a range of possible cluster numbers (K = 2–6).
+
+#### Internal Validation
+
+The internal validation results indicate that the **k-means method** provides the best overall performance, achieving the lowest Connectivity (16.8964) and the highest Silhouette score (0.4658) for **2 clusters**.  
+According to all three indices — *Connectivity*, *Dunn*, and *Silhouette* — a **two-cluster structure** appears to be the most appropriate partition for this dataset.
+
+#### Stability Validation
+
+The stability validation confirms that the **k-means algorithm** also yields the most stable clustering configuration, showing the best APN (0.0351) and ADM (0.1632) values for **2 clusters**.  
+These findings suggest that the **2-cluster solution** is not only internally coherent but also stable across resampling, indicating strong consistency in the underlying data structure.
+
+## External Validation
+
+In the external validation step, the goal is to compare the clusters identified by the algorithms (k-means, PAM, or hierarchical clustering) with an external reference — in this case, the true labels of the dataset.  
+This comparison allows us to quantify the agreement between the obtained clusters and the known classes using two measures:  
+the **Adjusted Rand Index (ARI)** and **Meila’s Variation of Information (VI)**.  
+
+The Adjusted Rand Index ranges from **-1** (no agreement) to **1** (perfect agreement), while Meila’s VI measures the amount of information lost between the two partitions — therefore, **smaller VI values indicate better agreement**.  
+
+We start by computing a cross-tabulation (confusion matrix) between the true labels (`seed$target`) and the clusters obtained with k-means (`km.res$cluster`), followed by the external validation indices.
+
+```{r}
+km.res<-eclust(df.scaled,"kmeans",k=3,nstart=25)
+table(seed$target,km.res$cluster)
+```
+
+
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
+library(fpc)
+
+# Compute external validation indices (Adjusted Rand Index and Meila’s VI)
+clust_stats <- cluster.stats(d = dist(df.scaled), seed$target,km.res$cluster)
+                             
+#Correct Rand index
+clust_stats$corrected.rand
+
+#Meilaìs VI index
+clust_stats$vi
+
+
+
+```
+## Pam 
+```{r, message=FALSE, fig.show='hide'}
+pam.res<-eclust(df.scaled,"pam",k=3,nstart=25)
+table(seed$target,pam.res$cluster)
+
+```
+```{r}
+clust_stats<-cluster.stats(d=dist(df.scaled),seed$target,pam.res$cluster)
+clust_stats$corrected.rand
+clust_stats$vi
+```
+```{r}
+res.hc<-eclust(df.scaled,"hclust",k=3,nstart=25)
+table(seed$target,res.hc$cluster)
+
+clust_stats<-cluster.stats(d=dist(df.scaled),seed$target,res.hc$cluster)
+clust_stats$corrected.rand
+clust_stats$vi
+```
+
+### Model-based Clustering
+
+One disadvantage of traditional clustering methods, such as hierarchical and partitioning
+clustering algorithms, is that they are largely heuristic and not based on formal models. This
+means that formal inference is not possible.
+
+An alternative is model-based clustering, which considers the sample observations x1, …, xn as
+coming from a distribution that is mixture of two or more, say K, distribution, commonly one for
+each cluster.
+Each component, k=1,…,K, is described by a probability density or mass function and has an asso
+ciated probability density or mass function and has an associated probability or “weight” in
+the mixture. Unlike hierarchical and partitioning clustering methods, the model-based clustering
+uses a soft assignment, where each data point has a probability of belonging to each cluster.
+
+```{r}
+
+ set.seed(1)
+mod<-Mclust(df.scaled)
+fviz_mclust(mod, "BIC",palette="jco")
+```
+
+Results indicated that the best-fitting model was **EEV (ellipsoidal, equal volume and shape)** with **four clusters**.  
+This model provides a probabilistic framework for clustering, automatically estimating both the number of groups and their underlying covariance structures.
+
+```{r}
+summary(mod)
+```
+```{r}
+summary(mod$BIC)
+```
+We can take a look at the information contained in the model and we can see that the BIC has a
+log-likelihood of 416, that it uses 122 parameters, that the BIC value is 179 and that the ICL
+(Integrated Complet ed Likelihood) is 172 and that there are 4 clusters.
+The three best model configurations are:
+
+```{r}
+
+head(round(mod$z, 6), 30) # Probability to belong to a given cluster
+```
+It give us the probability that every units belong to every cluster.
+Easly we can get the vector related to the hard classification (cluster of membership of each unit) 
+
+```{r}
+ head(mod$classification, 30) # Cluster assignment of each observation
+```
+ I plot the data according to classification vector, an the real seed$target
+
+```{r}
+
+pairs(df.scaled, gap=0, pch = 16, col = mod$classification) #insome plot the separations is good, in other situations the colors are overlapped
+```
+
+```{r}
+pairs(df.scaled, gap=0, pch = 16, col=seed$target)
+
+```
+```{r}
+seed$target[seed$target == 0 & mod$classification %in% c(1,3,4)] <- -1
+table(seed$target, mod$classification)
+
+```
+
+
+
+
+```{r}
+adjustedRandIndex(seed$target, mod$classification) #assume valuebetween -1 (disagreement) and 1 (great agreement)
+```
+
+
+```{r}
+classError(seed$target,mod$classification)
+
+```
+
+
+
+```{r}
+fviz_mclust(mod, "classification", geom = "point", pointsize = 1.5
+, palette = "jco") #remember that cluster are determined in the original space, so could be sovrapposition between cluster in PCA space
+```
+
+
+
+
